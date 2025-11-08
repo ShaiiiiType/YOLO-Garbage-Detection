@@ -3,7 +3,7 @@ import sys
 import argparse
 import glob
 import time
-
+import serial
 import cv2
 import numpy as np
 from ultralytics import YOLO
@@ -23,6 +23,9 @@ parser.add_argument('--resolution', help='Resolution in WxH to display inference
                     default=None)
 parser.add_argument('--record', help='Record results from video or webcam and save it as "demo1.avi". Must specify --resolution argument to record.',
                     action='store_true')
+parser.add_argument('--port', help='Port connected to the arduino', 
+                    required=True)
+
 
 args = parser.parse_args()
 
@@ -33,6 +36,7 @@ img_source = args.source
 min_thresh = args.thresh
 user_res = args.resolution
 record = args.record
+port = args.port
 
 # Check if model file exists and is valid
 if (not os.path.exists(model_path)):
@@ -42,6 +46,7 @@ if (not os.path.exists(model_path)):
 # Load the model into memory and get labemap
 model = YOLO(model_path, task='detect')
 labels = model.names
+print(labels)
 
 # Parse input to determine if image source is a file, folder, video, or USB camera
 img_ext_list = ['.jpg','.JPG','.jpeg','.JPEG','.png','.PNG','.bmp','.BMP']
@@ -49,21 +54,9 @@ vid_ext_list = ['.avi','.mov','.mp4','.mkv','.wmv']
 
 if os.path.isdir(img_source):
     source_type = 'folder'
-elif os.path.isfile(img_source):
-    _, ext = os.path.splitext(img_source)
-    if ext in img_ext_list:
-        source_type = 'image'
-    elif ext in vid_ext_list:
-        source_type = 'video'
-    else:
-        print(f'File extension {ext} is not supported.')
-        sys.exit(0)
 elif 'usb' in img_source:
     source_type = 'usb'
     usb_idx = int(img_source[3:])
-elif 'picamera' in img_source:
-    source_type = 'picamera'
-    picam_idx = int(img_source[8:])
 else:
     print(f'Input {img_source} is invalid. Please try again.')
     sys.exit(0)
@@ -89,16 +82,8 @@ if record:
     recorder = cv2.VideoWriter(record_name, cv2.VideoWriter_fourcc(*'MJPG'), record_fps, (resW,resH))
 
 # Load or initialize image source
-if source_type == 'image':
-    imgs_list = [img_source]
-elif source_type == 'folder':
-    imgs_list = []
-    filelist = glob.glob(img_source + '/*')
-    for file in filelist:
-        _, file_ext = os.path.splitext(file)
-        if file_ext in img_ext_list:
-            imgs_list.append(file)
-elif source_type == 'video' or source_type == 'usb':
+
+if source_type == 'video' or source_type == 'usb':
 
     if source_type == 'video': cap_arg = img_source
     elif source_type == 'usb': cap_arg = usb_idx
@@ -109,11 +94,6 @@ elif source_type == 'video' or source_type == 'usb':
         ret = cap.set(3, resW)
         ret = cap.set(4, resH)
 
-elif source_type == 'picamera':
-    from picamera2 import Picamera2
-    cap = Picamera2()
-    cap.configure(cap.create_video_configuration(main={"format": 'RGB888', "size": (resW, resH)}))
-    cap.start()
 
 # Set bounding box colors (using the Tableu 10 color scheme)
 bbox_colors = [(164,120,87), (68,148,228), (93,97,209), (178,182,133), (88,159,106), 
@@ -125,37 +105,43 @@ frame_rate_buffer = []
 fps_avg_len = 200
 img_count = 0
 
+
+cooldown_active = False
+cooldown_start_time = 0
+cooldown_duration = 5  # seconds
+frozen_frame = None
+
+
+try:
+    arduino = serial.Serial(port=port, baudrate=9600, timeout=1)
+    time.sleep(2)  # wait for Arduino to reset
+    print(f"Connected to Arduino on {port}")
+except:
+    arduino = None
+    print("Arduino not found. Continuing without serial output.")
+
 # Begin inference loop
 while True:
 
     t_start = time.perf_counter()
 
-    # Load frame from image source
-    if source_type == 'image' or source_type == 'folder': # If source is image or image folder, load the image using its filename
-        if img_count >= len(imgs_list):
-            print('All images have been processed. Exiting program.')
-            sys.exit(0)
-        img_filename = imgs_list[img_count]
-        frame = cv2.imread(img_filename)
-        img_count = img_count + 1
     
-    elif source_type == 'video': # If source is a video, load next frame from video file
-        ret, frame = cap.read()
-        if not ret:
-            print('Reached end of the video file. Exiting program.')
-            break
-    
-    elif source_type == 'usb': # If source is a USB camera, grab frame from camera
+    if source_type == 'usb': # If source is a USB camera, grab frame from camera
         ret, frame = cap.read()
         if (frame is None) or (not ret):
             print('Unable to read frames from the camera. This indicates the camera is disconnected or not working. Exiting program.')
             break
 
-    elif source_type == 'picamera': # If source is a Picamera, grab frames using picamera interface
-        frame = cap.capture_array()
-        if (frame is None):
-            print('Unable to read frames from the Picamera. This indicates the camera is disconnected or not working. Exiting program.')
-            break
+        if cooldown_active:
+            elapsed = time.time() - cooldown_start_time
+            if elapsed < cooldown_duration:
+                frame = frozen_frame.copy()
+                cv2.imshow('YOLO detection results', frame)
+                if cv2.waitKey(5) & 0xFF == ord('q'):
+                    break
+                continue
+            else:
+                cooldown_active = False
 
     # Resize frame to desired display resolution
     if resize == True:
@@ -186,8 +172,18 @@ while True:
         # Get bounding box confidence
         conf = detections[i].conf.item()
 
+
         # Draw box if confidence threshold is high enough
-        if conf > 0.5:
+        if conf > 0.6:
+
+            box_area = (xmax - xmin) * (ymax - ymin)
+            frame_area = frame.shape[0] * frame.shape[1]
+            area_ratio = box_area / frame_area
+
+            # Skip boxes that are too large (e.g., > 50% of frame)
+            if area_ratio > 0.45:
+                continue
+
 
             color = bbox_colors[classidx % 10]
             cv2.rectangle(frame, (xmin,ymin), (xmax,ymax), color, 2)
@@ -200,6 +196,19 @@ while True:
 
             # Basic example: count the number of objects in the image
             object_count = object_count + 1
+
+            if not cooldown_active:
+                cooldown_active = True
+                cooldown_start_time = time.time()
+                frozen_frame = frame.copy()
+
+            if arduino:
+                if classname == "BIODEGRADABLE" or classname == "CARDBOARD" or classname == "PAPER":
+                    arduino.write(b'BIODEGRADABLE\n')
+                    print("Sent BIODEGRADABLE")
+                else:
+                    arduino.write(b'NON-BIODEGRADABLE\n')
+                    print("Sent NON-BIODEGRADABLE")
 
     # Calculate and draw framerate (if using video, USB, or Picamera source)
     if source_type == 'video' or source_type == 'usb' or source_type == 'picamera':
