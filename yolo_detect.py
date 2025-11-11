@@ -174,7 +174,7 @@ while True:
 
 
         # Draw box if confidence threshold is high enough
-        if conf > 0.6:
+        if conf > 0.3:
 
             box_area = (xmax - xmin) * (ymax - ymin)
             frame_area = frame.shape[0] * frame.shape[1]
