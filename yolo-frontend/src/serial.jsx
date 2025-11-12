@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Button} from '@mui/material';
 
 const WebSerialComponent = ({count, count1, count2}) => {
   const [port, setPort] = useState(null);
@@ -6,6 +7,9 @@ const WebSerialComponent = ({count, count1, count2}) => {
   const [dataReceived, setDataReceived] = useState([]);
   const readerRef = useRef(null);
   const writerRef = useRef(null);
+  const isFirst = useRef(true)
+  const isFirst1 = useRef(true)
+  const isFirst2 = useRef(true)
 
   const connectSerialPort = async () => {
     try {
@@ -14,9 +18,10 @@ const WebSerialComponent = ({count, count1, count2}) => {
       setPort(serialPort);
       setConnected(true);
       console.log('Serial port connected:', serialPort);
+      
+      writeToSerialPort('1')
+      writeToSerialPort('1')
 
-      // Start reading from the port
-      // readSerialPort(serialPort);
     } catch (error) {
       console.error('Error connecting to serial port:', error);
     }
@@ -35,7 +40,7 @@ const WebSerialComponent = ({count, count1, count2}) => {
           }
           const text = new TextDecoder().decode(value);
           setDataReceived((prevData) => [...prevData, text]);
-          console.log('Received:', text);
+          console.log('Received:', text); 
         }
       } catch (error) {
         console.error('Error reading from serial port:', error);
@@ -46,8 +51,12 @@ const WebSerialComponent = ({count, count1, count2}) => {
   };
 
   const writeToSerialPort = async (data) => {
-    if (!port || !port.writable) {
-      console.warn('Serial port not connected or not writable.');
+    if (!port) {
+      console.warn('Serial port not connected.');
+      return;
+    }
+    if (!port.writable) {
+      console.warn('Serial port not writable.');
       return;
     }
     writerRef.current = port.writable.getWriter();
@@ -90,52 +99,50 @@ const WebSerialComponent = ({count, count1, count2}) => {
 
   useEffect(() => {
     return () => {
-      writeToSerialPort("0")
+      if (isFirst.current) {
+        isFirst.current = false     
+      }
+      else {
+        writeToSerialPort('0')
+      }
+      
     };
-  }, [count]);
+  }, [count, port, connected]);
 
   useEffect(() => {
     return () => {
-      writeToSerialPort("2")
+      if (isFirst1.current) {
+        isFirst1.current = false     
+      }
+      else {
+        writeToSerialPort('2')
+      }
     };
-  }, [count1]);
+  }, [count1, port, connected]);
 
   useEffect(() => {
     return () => {
-      writeToSerialPort("1")
+      if (isFirst2.current) {
+        isFirst2.current = false     
+      }
+      else {
+        writeToSerialPort('1')
+      }
     };
-  }, [count2]);
+  }, [count2, port, connected]);
 
   return (
     <div>
-      <h1>Web Serial API with React</h1>
       {!connected ? (
-        <button onClick={connectSerialPort}>Connect Serial Port</button>
+        <Button variant="contained" color="primary" onClick={connectSerialPort} size="small">
+          Connect Serial Port
+        </Button>
       ) : (
-        <button onClick={disconnectSerialPort}>Disconnect Serial Port</button>
+        <Button variant="outlined" color="secondary" onClick={disconnectSerialPort} size="small">
+          Disconnect Serial Port
+        </Button>
       )}
-
-      {connected && (
-        <div>
-          <input
-            type="text"
-            placeholder="Enter data to send"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                writeToSerialPort(e.target.value);
-                e.target.value = '';
-              }
-            }}
-          />
-          <button onClick={() => writeToSerialPort('0')}>Send "Hello"</button>
-          <button onClick={() => writeToSerialPort('1')}>Send "Hello"</button>
-          <button onClick={() => writeToSerialPort('2')}>Send "Hello"</button>
-        </div>
-      )}
-
-      {/* <h2>Received Data:</h2>
-      <pre>{dataReceived.join('')}</pre> */}
-    </div>
+</div>
   );
 };
 

@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import WebCam, { socket } from './WebCam.jsx'
 import Serial from './serial.jsx'
-
-// import { serial_exports, new_data } from './serial.js'
+import { Button, TextField, Box, LinearProgress, Typography, Stack, Slider, Divider, Grid, Chip, Card } from '@mui/material';
 
 function App() {
   const [count, setCount] = useState(0)
@@ -38,7 +37,7 @@ function App() {
         }
       }
       else {
-        setCount1(prevCount => prevCount + 1);
+        setCount2(prevCount => prevCount + 1);
         console.log('reset')
       }
       
@@ -64,43 +63,123 @@ function App() {
 
 
   return (
-    <>
-      <p>
-        { status }
-      </p>
+    <Box sx={{ p: 3 }}>
+      <Box sx={{ textAlign: 'center', my: 4 }}>
+      <Typography variant="h4" fontWeight={700} color="primary.main" gutterBottom>WASTE SEGREGATION</Typography>
+      </Box>
+    <Grid container spacing={4} justifyContent="center" >
+      <Grid item xs={12} md={4}>
+        <Card variant="outlined">
+      <Stack spacing={3} sx={{ p: 3, width: 600, mx: 'auto' }}>
+        {/* Status */}
+        {/* <Typography variant="subtitle1" color="text.secondary">
+          {status}
+        </Typography> */}
 
-      <Serial count={count} count1={count1} count2={count2}/>
 
-      <div>
-        {/* TODO: Yung sa path, once na magawa siyang electron. From select folder na lang ung pag find nung path */}
-        <input placeholder="YOLO model path" value={modelPath} onChange={e => setModelPath(e.target.value)} className='border-2 rounded-sm'/>
-        <input placeholder="Arduino COM port" value={comPort} onChange={e => setComPort(e.target.value)} className='border-2 rounded-sm'/>
-        <input type="number" step="0.1" min="0" max="1" value={confidence} onChange={e => setConfidence(parseFloat(e.target.value))} className='border-2 rounded-sm'/>
-      </div>
+        <Chip label={status} variant='outlined' color={status === "Not connected to the backend" ? "" : "success"} />
 
-      <div style={{ margin: "10px" }}>
-        <button onClick={startDetection} className='border-2 rounded-sm'>Start Detection</button>
-        <button onClick={stopDetection} className='border-2 rounded-sm'>Stop</button>
-      </div>
+        {/* Serial counts
+        <Serial count={count} count1={count1} count2={count2} /> */}
 
-      { !hide && (<WebCam loading={loading} setLoading={setLoading} setWhatClass={setWhatClass}/>)}
-      <div className='bg-amber-950 w-[500px] h-[20px] m-2 flex relative'>
-        <div className={`h-full bg-amber-300 transition-all duration-300`} style={{ width: `${(count / 10) * 100}%` }}></div>
-        {(count == 10) && (
-          <p className='absolute left-1/2 -translate-x-1/2 text-sm font-semibold'>BIO TRASH CAN FULL</p>
-        )}
-      </div>
-      <div className='bg-amber-950 w-[500px] h-[20px] m-2 flex relative'>
-        <div className={`h-full bg-amber-300 transition-all duration-300`} style={{ width: `${(count1 / 10) * 100}%` }}></div>
-        {(count1 == 10) && (
-          <p className='absolute left-1/2 -translate-x-1/2 text-sm font-semibold'>NON-BIO TRASH CAN FULL</p>
-        )}
-      </div>
-      {/* <p>{whatClass}</p>
-      <p>{count}</p>
-      <p>{count1}</p>
-       */}
-    </>
+        {/* Input fields */}
+        <Stack spacing={2}>
+          <Grid container spacing={2}>
+            <Grid size={8}>
+              <TextField
+                label="YOLO Model Path"
+                variant="outlined"
+                fullWidth
+                size="small"
+                value={modelPath}
+                onChange={(e) => setModelPath(e.target.value)}
+              />
+            </Grid>
+            <Grid size={4}>
+              <Serial count={count} count1={count1} count2={count2} />
+            </Grid>
+          </Grid>
+          {/* <TextField
+            label="Arduino COM Port"
+            variant="outlined"
+            fullWidth
+            size="small"
+            value={comPort}
+            onChange={(e) => setComPort(e.target.value)}
+          /> */}
+          <Box>
+            <Typography gutterBottom>Confidence: {confidence.toFixed(2)}</Typography>
+            <Slider
+              value={confidence}
+              min={0}
+              max={1}
+              step={0.01} // allows values like 0.01, 0.42, 0.87, etc.
+              onChange={(e, val) => setConfidence(val)}
+              valueLabelDisplay="auto" // shows current value on thumb
+            />
+          </Box>
+        </Stack>
+
+        {/* Control buttons */}
+        <Stack direction="row" spacing={2}>
+          <Button variant="contained" color="primary" onClick={startDetection}>
+            Start Detection
+          </Button>
+          <Button variant="outlined" color="secondary" onClick={stopDetection}>
+            Stop
+          </Button>
+        </Stack>
+
+        {/* Webcam
+        {!hide && <WebCam loading={loading} setLoading={setLoading} setWhatClass={setWhatClass} />} */}
+
+        {/* Trash can progress bars */}
+        <Box>
+          <Typography variant="body2" gutterBottom>
+            BIO TRASH CAN CAPACITY
+          </Typography>
+          <LinearProgress
+            variant="determinate"
+            value={(count / 10) * 100}
+            sx={{ height: 20, borderRadius: 1 }}
+          />
+          {count === 10 && (
+            <Typography
+              variant="caption"
+              sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', mt: -2 }}
+            >
+              FULL
+            </Typography>
+          )}
+        </Box>
+
+        <Box>
+          <Typography variant="body2" gutterBottom>
+            NON-BIO TRASH CAN CAPACITY
+          </Typography>
+          <LinearProgress
+            variant="determinate"
+            value={(count1 / 10) * 100}
+            sx={{ height: 20, borderRadius: 1 }}
+          />
+          {count1 === 10 && (
+            <Typography
+              variant="caption"
+              sx={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', mt: -2 }}
+            >
+              FULL
+            </Typography>
+          )}
+        </Box>
+        
+      </Stack>
+      </Card>
+      </Grid>
+      <Grid item xs={12} md={8} >
+          {!hide && <WebCam loading={loading} setLoading={setLoading} setWhatClass={setWhatClass} />}
+        </Grid>
+    </Grid>
+    </Box>
   )
 }
 

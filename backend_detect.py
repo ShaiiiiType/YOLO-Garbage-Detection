@@ -4,7 +4,7 @@ from ultralytics import YOLO
 import cv2
 import serial
 import base64
-from queue import Queue
+# from queue import Queue
 import threading
 import time
 
@@ -32,21 +32,13 @@ start = 0
 threshold = 0.8
 justReset = False
 
+postReset = True
+post_start = 0
+post_duration = 4
+
 cooldown_active = False
 cooldown_start_time = 0
-cooldown_duration = 5  # seconds
-frozen_frame = None
-
-serial_queue = Queue()
-serial_lock = threading.Lock()
-
-def serial_worker():
-    while True:
-        msg = serial_queue.get()
-        if msg is None:
-            break
-            
-
+cooldown_duration = 5  # seconds        
 
 @socketio.on("set_config")
 def handle_set_config(data):
@@ -73,7 +65,7 @@ def handle_set_config(data):
     thread.start()
 
 def generate_frames():
-    global justReset, serial_lock, running, ready, start, threshold, cooldown_active, cooldown_start_time, cooldown_duration, frozen_frame
+    global justReset, post_start, post_duration, postReset, running, ready, start, threshold, cooldown_active, cooldown_start_time, cooldown_duration, frozen_frame
 
     print("Now starting")
     
@@ -99,9 +91,13 @@ def generate_frames():
             start = time.time()
 
         if not cooldown_active and not justReset:
+            post_start = time.time()
             justReset = True
             print("reset")
             socketio.emit("class", {"classs": 'RESET'})
+
+        if time.time() - post_start > post_duration and justReset:
+            postReset = True
 
         for i in range(len(detections)):
             xyxy_tensor = detections[i].xyxy.cpu() # Detections in Tensor format in CPU memory
@@ -145,45 +141,22 @@ def generate_frames():
                 if time.time() - start > threshold:
                     ready = True
 
-                if ready and not cooldown_active:
+                if ready and not cooldown_active and postReset:
+                    postReset = False
                     justReset = False
-                    print('b')
                     cooldown_active = True
                     cooldown_start_time = time.time()
                     if classname == "BIO" or classname == "PAPER":
-                        # if arduino:
-                        #     with serial_lock:
-                        #         print('a')
-                        #         arduino.write(b'0\n')
-                        #     time.sleep(0.05)
-                        #     arduino.flush()
                         print("Sent BIODEGRADABLE")
-                        print('e')
                         socketio.emit("class", {"classs": 'BIO'})
-                        print('f')
                     else:
-                        # if arduino:
-                        #     with serial_lock:
-                        #         print('a')
-                        #         arduino.write(b'2\n')
-                        #     time.sleep(0.05)
-                        #     arduino.flush()
                         print("Sent NON-BIODEGRADABLE")
-                        print('e')
                         socketio.emit("class", {"classs": 'NON-BIO'})
-                        print('f')
-                    print('c')
-
-                if classname == "BIO" or classname == "PAPER":
-                    the_class = 'BIO'
-                else:
-                    the_class = 'NON-BIO'
-                # print('b')
-                    
-        
+                           
         _, buffer = cv2.imencode('.jpg', frame)
         jpg_as_text = base64.b64encode(buffer).decode('utf-8')
         socketio.emit("frame", {"image": jpg_as_text})
+        time.sleep(0.01)
 
 
 @socketio.on("stop")
