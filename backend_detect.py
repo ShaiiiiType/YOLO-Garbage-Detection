@@ -4,6 +4,7 @@ from ultralytics import YOLO
 import cv2
 import serial
 import base64
+from queue import Queue
 import threading
 import time
 
@@ -26,15 +27,30 @@ cap = None
 running = False
 labels = None
 
+ready = True
+start = 0
+threshold = 0.8
+justReset = False
+
 cooldown_active = False
 cooldown_start_time = 0
 cooldown_duration = 5  # seconds
 frozen_frame = None
 
+serial_queue = Queue()
+serial_lock = threading.Lock()
+
+def serial_worker():
+    while True:
+        msg = serial_queue.get()
+        if msg is None:
+            break
+            
+
 
 @socketio.on("set_config")
 def handle_set_config(data):
-    global model, arduino, cap, running, config, labels
+    global serial_lock, model, arduino, cap, running, config, labels
     config.update(data)
 
     model = YOLO(config["model_path"], task='detect')
@@ -49,7 +65,7 @@ def handle_set_config(data):
         arduino = None
         print("Arduino not found. Continuing without serial output.")
 
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(1)
     running = True
 
     thread = threading.Thread(target=generate_frames)
@@ -57,7 +73,7 @@ def handle_set_config(data):
     thread.start()
 
 def generate_frames():
-    global running, cooldown_active, cooldown_start_time, cooldown_duration, frozen_frame
+    global justReset, serial_lock, running, ready, start, threshold, cooldown_active, cooldown_start_time, cooldown_duration, frozen_frame
 
     print("Now starting")
     
@@ -73,16 +89,19 @@ def generate_frames():
 
         if cooldown_active:
             elapsed = time.time() - cooldown_start_time
-            if elapsed < cooldown_duration:
-                frame_to_send = frozen_frame.copy()
-            else:
+            if elapsed > cooldown_duration:
                 cooldown_active = False
-                frame_to_send = frame
-        else:
-            frame_to_send = frame
 
-        results = model(frame_to_send, verbose=False)
+        results = model(frame, verbose=False)
         detections = results[0].boxes
+
+        if len(detections) == 0:
+            start = time.time()
+
+        if not cooldown_active and not justReset:
+            justReset = True
+            print("reset")
+            socketio.emit("class", {"classs": 'RESET'})
 
         for i in range(len(detections)):
             xyxy_tensor = detections[i].xyxy.cpu() # Detections in Tensor format in CPU memory
@@ -118,28 +137,53 @@ def generate_frames():
                 cv2.rectangle(frame, (xmin, label_ymin-labelSize[1]-10), (xmin+labelSize[0], label_ymin+baseLine-10), color, cv2.FILLED) # Draw white box to put label text in
                 cv2.putText(frame, label, (xmin, label_ymin-7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1) # Draw label text
 
-                if not cooldown_active:
+
+                if ready:
+                    ready = False
+                    start = time.time()
+
+                if time.time() - start > threshold:
+                    ready = True
+
+                if ready and not cooldown_active:
+                    justReset = False
+                    print('b')
                     cooldown_active = True
                     cooldown_start_time = time.time()
-                    frozen_frame = frame.copy()
-
-                if arduino:
                     if classname == "BIO" or classname == "PAPER":
-                        arduino.write(b'BIODEGRADABLE\n')
+                        # if arduino:
+                        #     with serial_lock:
+                        #         print('a')
+                        #         arduino.write(b'0\n')
+                        #     time.sleep(0.05)
+                        #     arduino.flush()
                         print("Sent BIODEGRADABLE")
+                        print('e')
+                        socketio.emit("class", {"classs": 'BIO'})
+                        print('f')
                     else:
-                        arduino.write(b'NON-BIODEGRADABLE\n')
+                        # if arduino:
+                        #     with serial_lock:
+                        #         print('a')
+                        #         arduino.write(b'2\n')
+                        #     time.sleep(0.05)
+                        #     arduino.flush()
                         print("Sent NON-BIODEGRADABLE")
+                        print('e')
+                        socketio.emit("class", {"classs": 'NON-BIO'})
+                        print('f')
+                    print('c')
 
                 if classname == "BIO" or classname == "PAPER":
                     the_class = 'BIO'
                 else:
                     the_class = 'NON-BIO'
+                # print('b')
                     
         
-        _, buffer = cv2.imencode('.jpg', frame_to_send)
+        _, buffer = cv2.imencode('.jpg', frame)
         jpg_as_text = base64.b64encode(buffer).decode('utf-8')
-        socketio.emit("frame", {"image": jpg_as_text, "class": the_class})
+        socketio.emit("frame", {"image": jpg_as_text})
 
 
 @socketio.on("stop")

@@ -1,9 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import WebCam, { socket } from './WebCam.jsx'
+import Serial from './serial.jsx'
+
+// import { serial_exports, new_data } from './serial.js'
 
 function App() {
   const [count, setCount] = useState(0)
   const [count1, setCount1] = useState(0)
+  const [count2, setCount2] = useState(0)
   const [modelPath, setModelPath] = useState("");
   const [comPort, setComPort] = useState("");
   const [confidence, setConfidence] = useState(0.5);
@@ -18,16 +22,29 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (whatClass == "BIO"){
-      if (count < 10) {
-        setCount(prevCount => prevCount + 1);
+    socket.on("class", data => {
+      if (data.classs == "BIO") {
+        if (count < 10) {
+          setCount(prevCount => prevCount + 1);
+          setWhatClass("BIO")
+          console.log(data.classs);
+        }
       }
-    } else if (whatClass == "NON-BIO") {
-      if (count1 < 10) {
+      else if (data.classs == "NON-BIO") {
+        if (count1 < 10) {
+          setCount1(prevCount => prevCount + 1);
+          setWhatClass("NON-BIO")
+          console.log(data.classs); 
+        }
+      }
+      else {
         setCount1(prevCount => prevCount + 1);
+        console.log('reset')
       }
-    }
-  }, [whatClass]);
+      
+    });
+    return () => socket.off("class")
+  }, [])
 
   const startDetection = () => {
     setHide(false);
@@ -45,11 +62,14 @@ function App() {
   }
 
 
+
   return (
     <>
       <p>
         { status }
       </p>
+
+      <Serial count={count} count1={count1} count2={count2}/>
 
       <div>
         {/* TODO: Yung sa path, once na magawa siyang electron. From select folder na lang ung pag find nung path */}
