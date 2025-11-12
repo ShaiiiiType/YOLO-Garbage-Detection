@@ -19,9 +19,13 @@ function App() {
 
   useEffect(() => {
     if (whatClass == "BIO"){
-      setCount(prevCount => prevCount + 1);
+      if (count < 10) {
+        setCount(prevCount => prevCount + 1);
+      }
     } else if (whatClass == "NON-BIO") {
-      setCount1(prevCount => prevCount + 1);
+      if (count1 < 10) {
+        setCount1(prevCount => prevCount + 1);
+      }
     }
   }, [whatClass]);
 
@@ -60,18 +64,22 @@ function App() {
       </div>
 
       { !hide && (<WebCam loading={loading} setLoading={setLoading} setWhatClass={setWhatClass}/>)}
-      <div className='bg-amber-950 w-[500px] h-[20px] m-2'>
+      <div className='bg-amber-950 w-[500px] h-[20px] m-2 flex relative'>
         <div className={`h-full bg-amber-300 transition-all duration-300`} style={{ width: `${(count / 10) * 100}%` }}></div>
-
+        {(count == 10) && (
+          <p className='absolute left-1/2 -translate-x-1/2 text-sm font-semibold'>BIO TRASH CAN FULL</p>
+        )}
       </div>
-      <div className='bg-amber-950 w-[500px] h-[20px] m-2 '>
+      <div className='bg-amber-950 w-[500px] h-[20px] m-2 flex relative'>
         <div className={`h-full bg-amber-300 transition-all duration-300`} style={{ width: `${(count1 / 10) * 100}%` }}></div>
-
+        {(count1 == 10) && (
+          <p className='absolute left-1/2 -translate-x-1/2 text-sm font-semibold'>NON-BIO TRASH CAN FULL</p>
+        )}
       </div>
-      <p>{whatClass}</p>
+      {/* <p>{whatClass}</p>
       <p>{count}</p>
       <p>{count1}</p>
-      
+       */}
     </>
   )
 }
